@@ -1,4 +1,4 @@
-# ebt-plugin-gallery-images
+# emdash-plugin-gallery-images
 
 A photo gallery field plugin for [Emdash CMS](https://emdashcms.com). Adds a `gallery-uploader` field widget to the content editor that lets editors upload multiple photos, reorder them, and add captions and alt text — all stored as a JSON array on the content entry.
 
@@ -80,6 +80,12 @@ const images = entry.data.images ?? [];
 
 - Emdash `^0.16.0`
 - Cloudflare R2 media storage (the plugin uploads via `POST /_emdash/api/media` — presigned URL upload is not used)
+
+## About
+
+Photo gallery field plugin for EmDash CMS. Designed by Marcus Shaw for [Every Bit Texas](https://everybittexas.com). Coded by [Claude Code](https://claude.ai/code).
+
+Built for [EmDash CMS](https://github.com/emdash-cms/emdash) — star the repo to support open-source CMS development.
 
 ## License
 

@@ -1,5 +1,5 @@
 {
-	"name": "ebt-plugin-gallery-images",
+	"name": "emdash-plugin-gallery-images",
 	"version": "1.3.0",
 	"type": "module",
 	"exports": {
