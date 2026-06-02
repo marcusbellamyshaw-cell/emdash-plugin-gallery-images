@@ -1,6 +1,6 @@
 // emdash 0.16.x / kumo 2.x
 import { useState, useEffect, useRef } from "react";
-import { apiFetch, MediaPickerModal, uploadMedia } from "@emdash-cms/admin";
+import { apiFetch, fetchMediaList, uploadMedia } from "@emdash-cms/admin";
 import type { MediaItem } from "@emdash-cms/admin";
 
 const PLUGIN_API = "/_emdash/api/plugins/ebt-gallery-images";
@@ -57,8 +57,110 @@ function parseImages(v: unknown): GalleryImage[] {
 	return [];
 }
 
+// ── Self-contained media library picker ───────────────────────────────────────
+// Uses fetchMediaList() directly — plain async fn, no React context needed.
+
+function MediaLibraryPicker({
+	open,
+	onClose,
+	onSelect,
+}: {
+	open: boolean;
+	onClose: () => void;
+	onSelect: (item: { storageKey: string; alt: string; caption: string }) => void;
+}) {
+	const [items, setItems] = useState<MediaItem[]>([]);
+	const [loading, setLoading] = useState(false);
+	const [nextCursor, setNextCursor] = useState<string | undefined>();
+	const [loadingMore, setLoadingMore] = useState(false);
+
+	useEffect(() => {
+		if (!open) return;
+		setLoading(true);
+		setItems([]);
+		setNextCursor(undefined);
+		fetchMediaList({ mimeType: "image/", limit: 48 })
+			.then((result) => {
+				setItems(result.items.filter((i) => i.storageKey));
+				setNextCursor(result.nextCursor);
+			})
+			.catch(() => {})
+			.finally(() => setLoading(false));
+	}, [open]);
+
+	async function loadMore() {
+		if (!nextCursor) return;
+		setLoadingMore(true);
+		try {
+			const result = await fetchMediaList({ mimeType: "image/", limit: 48, cursor: nextCursor });
+			setItems((prev) => [...prev, ...result.items.filter((i) => i.storageKey)]);
+			setNextCursor(result.nextCursor);
+		} catch {
+			// ignore
+		} finally {
+			setLoadingMore(false);
+		}
+	}
+
+	if (!open) return null;
+
+	return (
+		<div style={pk.overlay} onClick={onClose}>
+			<div style={pk.modal} onClick={(e) => e.stopPropagation()}>
+				<div style={pk.header}>
+					<span style={pk.title}>Choose from Library</span>
+					<button type="button" style={pk.closeBtn} onClick={onClose}>×</button>
+				</div>
+				<div style={pk.body}>
+					{loading ? (
+						<div style={pk.center}>Loading…</div>
+					) : items.length === 0 ? (
+						<div style={pk.center}>No images in your media library yet.</div>
+					) : (
+						<>
+							<div style={pk.grid}>
+								{items.map((item) => (
+									<button
+										key={item.id}
+										type="button"
+										style={pk.thumbBtn}
+										title={item.alt ?? item.filename}
+										onClick={() => onSelect({
+											storageKey: item.storageKey!,
+											alt: item.alt ?? "",
+											caption: item.caption ?? "",
+										})}
+									>
+										<img
+											src={thumbUrl(item.storageKey!, 160)}
+											alt={item.alt ?? ""}
+											loading="lazy"
+											style={pk.thumbImg}
+										/>
+									</button>
+								))}
+							</div>
+							{nextCursor && (
+								<div style={{ textAlign: "center", marginTop: 16 }}>
+									<button
+										type="button"
+										style={pk.loadMoreBtn}
+										disabled={loadingMore}
+										onClick={loadMore}
+									>
+										{loadingMore ? "Loading…" : "Load more"}
+									</button>
+								</div>
+							)}
+						</>
+					)}
+				</div>
+			</div>
+		</div>
+	);
+}
+
 // ── Gallery Uploader Field Widget ─────────────────────────────────────────────
-// Rendered directly inside the post/page editor for the "Gallery Images" field.
 
 export function GalleryUploaderField({
 	value,
@@ -118,16 +220,6 @@ export function GalleryUploaderField({
 		setUploading(false);
 	}
 
-	function handlePickerSelect(item: MediaItem) {
-		if (!item.storageKey) return;
-		update([...images, {
-			mediaId: item.storageKey,
-			caption: item.caption ?? "",
-			alt: item.alt ?? "",
-		}]);
-		setPickerOpen(false);
-	}
-
 	function remove(i: number) {
 		update(images.filter((_, idx) => idx !== i));
 	}
@@ -154,7 +246,6 @@ export function GalleryUploaderField({
 
 	return (
 		<div style={fw.wrap}>
-			{/* Upload / picker toolbar */}
 			<div style={fw.toolbar}>
 				<button
 					type="button"
@@ -241,19 +332,19 @@ export function GalleryUploaderField({
 				</div>
 			)}
 
-			<MediaPickerModal
+			<MediaLibraryPicker
 				open={pickerOpen}
-				onOpenChange={setPickerOpen}
-				onSelect={handlePickerSelect}
-				localOnly
-				mimeTypeFilters={["image/"]}
-				title="Choose from Library"
+				onClose={() => setPickerOpen(false)}
+				onSelect={(item) => {
+					update([...images, { mediaId: item.storageKey, caption: item.caption, alt: item.alt }]);
+					setPickerOpen(false);
+				}}
 			/>
 		</div>
 	);
 }
 
-// ── Admin management page (fallback for bulk operations) ──────────────────────
+// ── Admin management page ─────────────────────────────────────────────────────
 
 function EntryList({ onSelect }: { onSelect: (collection: string, slug: string) => void }) {
 	const [entries, setEntries] = useState<EntryItem[]>([]);
@@ -326,6 +417,22 @@ export const pages = {
 
 export const fields = {
 	"gallery-uploader": GalleryUploaderField,
+};
+
+// ── Picker styles ─────────────────────────────────────────────────────────────
+
+const pk: Record<string, React.CSSProperties> = {
+	overlay: { position: "fixed", inset: 0, background: "rgba(13,12,10,0.6)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center" },
+	modal: { background: "#fff", width: "min(820px, 95vw)", maxHeight: "80vh", display: "flex", flexDirection: "column", boxShadow: "0 8px 40px rgba(0,0,0,0.25)" },
+	header: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 18px", borderBottom: "1px solid #e5e7eb", flexShrink: 0 },
+	title: { fontSize: 14, fontWeight: 700, color: "#0d0c0a", fontFamily: "Inter, system-ui, sans-serif" },
+	closeBtn: { background: "none", border: "none", fontSize: 22, lineHeight: 1, cursor: "pointer", color: "#6e6a5e", padding: "0 2px" },
+	body: { overflowY: "auto", padding: 16, flex: 1 },
+	center: { display: "flex", alignItems: "center", justifyContent: "center", padding: 48, fontSize: 13, color: "#6e6a5e", fontFamily: "Inter, system-ui, sans-serif" },
+	grid: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(120px, 1fr))", gap: 8 },
+	thumbBtn: { border: "2px solid transparent", padding: 0, cursor: "pointer", background: "#f0ede2", aspectRatio: "1", overflow: "hidden", display: "block", width: "100%" },
+	thumbImg: { width: "100%", height: "100%", objectFit: "cover", display: "block" },
+	loadMoreBtn: { background: "transparent", border: "1.5px solid #d6d1be", padding: "7px 20px", fontSize: 12, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", cursor: "pointer", color: "#0d0c0a", fontFamily: "Inter, system-ui, sans-serif" },
 };
 
 // ── Field widget styles ───────────────────────────────────────────────────────
