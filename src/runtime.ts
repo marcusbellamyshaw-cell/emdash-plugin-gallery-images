@@ -32,7 +32,7 @@ function json(body: unknown, status = 200): Response {
 export function createPlugin() {
 	return definePlugin({
 		id: "ebt-gallery-images",
-		version: "1.2.0",
+		version: "1.3.0",
 		capabilities: ["content:read", "content:write"],
 
 		admin: {

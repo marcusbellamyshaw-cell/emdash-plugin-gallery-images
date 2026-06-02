@@ -1,6 +1,6 @@
 // emdash 0.16.x / kumo 2.x
 import { useState, useEffect, useRef } from "react";
-import { apiFetch, fetchMediaList, uploadMedia } from "@emdash-cms/admin";
+import { apiFetch, fetchMediaList } from "@emdash-cms/admin";
 import type { MediaItem } from "@emdash-cms/admin";
 
 const PLUGIN_API = "/_emdash/api/plugins/ebt-gallery-images";
@@ -67,15 +67,17 @@ function MediaLibraryPicker({
 }: {
 	open: boolean;
 	onClose: () => void;
-	onSelect: (item: { storageKey: string; alt: string; caption: string }) => void;
+	onSelect: (items: Array<{ storageKey: string; alt: string; caption: string }>) => void;
 }) {
 	const [items, setItems] = useState<MediaItem[]>([]);
+	const [selected, setSelected] = useState<Set<string>>(new Set());
 	const [loading, setLoading] = useState(false);
 	const [nextCursor, setNextCursor] = useState<string | undefined>();
 	const [loadingMore, setLoadingMore] = useState(false);
 
 	useEffect(() => {
 		if (!open) return;
+		setSelected(new Set());
 		setLoading(true);
 		setItems([]);
 		setNextCursor(undefined);
@@ -102,6 +104,23 @@ function MediaLibraryPicker({
 		}
 	}
 
+	function toggle(storageKey: string) {
+		setSelected((prev) => {
+			const next = new Set(prev);
+			if (next.has(storageKey)) next.delete(storageKey);
+			else next.add(storageKey);
+			return next;
+		});
+	}
+
+	function confirm() {
+		const picked = items
+			.filter((i) => i.storageKey && selected.has(i.storageKey))
+			.map((i) => ({ storageKey: i.storageKey!, alt: i.alt ?? "", caption: i.caption ?? "" }));
+		if (picked.length > 0) onSelect(picked);
+		onClose();
+	}
+
 	if (!open) return null;
 
 	return (
@@ -109,7 +128,14 @@ function MediaLibraryPicker({
 			<div style={pk.modal} onClick={(e) => e.stopPropagation()}>
 				<div style={pk.header}>
 					<span style={pk.title}>Choose from Library</span>
-					<button type="button" style={pk.closeBtn} onClick={onClose}>×</button>
+					<div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+						{selected.size > 0 && (
+							<button type="button" style={pk.addBtn} onClick={confirm}>
+								Add {selected.size} {selected.size === 1 ? "photo" : "photos"}
+							</button>
+						)}
+						<button type="button" style={pk.closeBtn} onClick={onClose}>×</button>
+					</div>
 				</div>
 				<div style={pk.body}>
 					{loading ? (
@@ -118,27 +144,28 @@ function MediaLibraryPicker({
 						<div style={pk.center}>No images in your media library yet.</div>
 					) : (
 						<>
+							<p style={pk.hint}>Click photos to select, then click "Add photos".</p>
 							<div style={pk.grid}>
-								{items.map((item) => (
-									<button
-										key={item.id}
-										type="button"
-										style={pk.thumbBtn}
-										title={item.alt ?? item.filename}
-										onClick={() => onSelect({
-											storageKey: item.storageKey!,
-											alt: item.alt ?? "",
-											caption: item.caption ?? "",
-										})}
-									>
-										<img
-											src={thumbUrl(item.storageKey!, 160)}
-											alt={item.alt ?? ""}
-											loading="lazy"
-											style={pk.thumbImg}
-										/>
-									</button>
-								))}
+								{items.map((item) => {
+									const isSelected = selected.has(item.storageKey!);
+									return (
+										<button
+											key={item.id}
+											type="button"
+											style={{ ...pk.thumbBtn, ...(isSelected ? pk.thumbBtnSelected : {}) }}
+											title={item.alt ?? item.filename}
+											onClick={() => toggle(item.storageKey!)}
+										>
+											<img
+												src={thumbUrl(item.storageKey!, 160)}
+												alt={item.alt ?? ""}
+												loading="lazy"
+												style={pk.thumbImg}
+											/>
+											{isSelected && <div style={pk.checkmark}>✓</div>}
+										</button>
+									);
+								})}
 							</div>
 							{nextCursor && (
 								<div style={{ textAlign: "center", marginTop: 16 }}>
@@ -198,14 +225,18 @@ export function GalleryUploaderField({
 
 		for (const file of Array.from(files)) {
 			try {
-				const mediaItem = await uploadMedia(file);
-				const storageKey = mediaItem.storageKey;
-				if (!storageKey) throw new Error("Upload response missing storageKey");
-				added.push({
-					mediaId: storageKey,
-					caption: mediaItem.caption ?? "",
-					alt: mediaItem.alt ?? "",
-				});
+				const formData = new FormData();
+				formData.append("file", file);
+				const res = await apiFetch("/_emdash/api/media", { method: "POST", body: formData });
+				if (!res.ok) {
+					const err = await res.json().catch(() => ({})) as Record<string, unknown>;
+					const d = (err?.data ?? err) as Record<string, unknown>;
+					throw new Error(extractErrorMessage(d, res.status));
+				}
+				const body = await res.json() as { data?: { item?: { storageKey?: string } } };
+				const storageKey = body?.data?.item?.storageKey;
+				if (!storageKey) throw new Error("Unexpected upload response — missing storageKey");
+				added.push({ mediaId: storageKey, caption: "", alt: "" });
 			} catch (e: unknown) {
 				console.error("[gallery-uploader] upload error:", e);
 				const msg = e instanceof Error ? e.message : typeof e === "string" ? e : JSON.stringify(e);
@@ -336,9 +367,8 @@ export function GalleryUploaderField({
 			<MediaLibraryPicker
 				open={pickerOpen}
 				onClose={() => setPickerOpen(false)}
-				onSelect={(item) => {
-					update([...images, { mediaId: item.storageKey, caption: item.caption, alt: item.alt }]);
-					setPickerOpen(false);
+				onSelect={(picked) => {
+					update([...images, ...picked.map((i) => ({ mediaId: i.storageKey, caption: i.caption, alt: i.alt }))]);
 				}}
 			/>
 		</div>
@@ -431,8 +461,12 @@ const pk: Record<string, React.CSSProperties> = {
 	body: { overflowY: "auto", padding: 16, flex: 1 },
 	center: { display: "flex", alignItems: "center", justifyContent: "center", padding: 48, fontSize: 13, color: "#6e6a5e", fontFamily: "Inter, system-ui, sans-serif" },
 	grid: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(120px, 1fr))", gap: 8 },
-	thumbBtn: { border: "2px solid transparent", padding: 0, cursor: "pointer", background: "#f0ede2", aspectRatio: "1", overflow: "hidden", display: "block", width: "100%" },
+	hint: { fontSize: 12, color: "#9ca3af", margin: "0 0 12px", fontFamily: "Inter, system-ui, sans-serif" },
+	thumbBtn: { position: "relative", border: "2px solid transparent", padding: 0, cursor: "pointer", background: "#f0ede2", aspectRatio: "1", overflow: "hidden", display: "block", width: "100%" },
+	thumbBtnSelected: { border: "2px solid #c8232c" },
 	thumbImg: { width: "100%", height: "100%", objectFit: "cover", display: "block" },
+	checkmark: { position: "absolute", top: 4, right: 4, width: 20, height: 20, background: "#c8232c", color: "#fff", borderRadius: "50%", fontSize: 12, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" },
+	addBtn: { background: "#c8232c", color: "#fff", border: "none", padding: "7px 14px", fontSize: 12, fontWeight: 700, letterSpacing: "0.08em", cursor: "pointer", fontFamily: "Inter, system-ui, sans-serif" },
 	loadMoreBtn: { background: "transparent", border: "1.5px solid #d6d1be", padding: "7px 20px", fontSize: 12, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", cursor: "pointer", color: "#0d0c0a", fontFamily: "Inter, system-ui, sans-serif" },
 };
 

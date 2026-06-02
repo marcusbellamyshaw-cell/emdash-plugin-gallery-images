@@ -9,7 +9,7 @@ export interface GalleryImage {
 export function galleryImagesPlugin(): PluginDescriptor {
 	return {
 		id: "ebt-gallery-images",
-		version: "1.2.0",
+		version: "1.3.0",
 		entrypoint: "ebt-plugin-gallery-images/runtime",
 		adminEntry: "ebt-plugin-gallery-images/admin",
 		adminPages: [
