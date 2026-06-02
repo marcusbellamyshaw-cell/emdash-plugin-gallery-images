@@ -246,6 +246,7 @@ export function GalleryUploaderField({
 
 	return (
 		<div style={fw.wrap}>
+			<div style={fw.sectionHead}>Photo Gallery</div>
 			<div style={fw.toolbar}>
 				<button
 					type="button"
@@ -439,6 +440,7 @@ const pk: Record<string, React.CSSProperties> = {
 
 const fw: Record<string, React.CSSProperties> = {
 	wrap: { fontFamily: "Inter, system-ui, sans-serif" },
+	sectionHead: { fontSize: 11, fontWeight: 800, letterSpacing: "0.16em", textTransform: "uppercase", color: "#6e6a5e", marginBottom: 10 },
 	toolbar: { display: "flex", alignItems: "center", gap: 10, marginBottom: 12, flexWrap: "wrap" },
 	addBtn: { background: "#c8232c", color: "#fff", border: "none", padding: "8px 16px", fontSize: 12, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", cursor: "pointer" },
 	libraryBtn: { background: "transparent", color: "#0d0c0a", border: "1.5px solid #d6d1be", padding: "8px 16px", fontSize: 12, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", cursor: "pointer" },
