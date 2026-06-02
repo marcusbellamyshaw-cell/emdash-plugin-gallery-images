@@ -1,0 +1,15 @@
+{
+	"name": "ebt-plugin-gallery-images",
+	"version": "1.1.0",
+	"type": "module",
+	"exports": {
+		".": "./src/index.ts",
+		"./runtime": "./src/runtime.ts",
+		"./admin": "./src/admin.tsx"
+	},
+	"peerDependencies": {
+		"emdash": "^0.16.0",
+		"@emdash-cms/admin": "*",
+		"react": "^18.0.0 || ^19.0.0"
+	}
+}
