@@ -377,7 +377,7 @@ export function GalleryUploaderField({
 
 // ── Admin management page ─────────────────────────────────────────────────────
 
-function EntryList({ onSelect }: { onSelect: (collection: string, slug: string) => void }) {
+function EntryList() {
 	const [entries, setEntries] = useState<EntryItem[]>([]);
 	const [loading, setLoading] = useState(true);
 	const [filter, setFilter] = useState<"all" | "posts" | "pages">("all");
@@ -437,7 +437,7 @@ function EntryList({ onSelect }: { onSelect: (collection: string, slug: string) 
 }
 
 export function GalleryImagesPage() {
-	return <EntryList onSelect={() => {}} />;
+	return <EntryList />;
 }
 
 // ── Required exports ──────────────────────────────────────────────────────────
