@@ -1,6 +1,7 @@
-// emdash 0.15.0 / kumo 2.x rebuild
+// emdash 0.16.x / kumo 2.x
 import { useState, useEffect, useRef } from "react";
-import { apiFetch } from "@emdash-cms/admin";
+import { apiFetch, MediaPickerModal, uploadMedia } from "@emdash-cms/admin";
+import type { MediaItem } from "@emdash-cms/admin";
 
 const PLUGIN_API = "/_emdash/api/plugins/ebt-gallery-images";
 
@@ -15,19 +16,6 @@ function extractErrorMessage(err: Record<string, unknown>, status: number): stri
 	const msg = err?.message;
 	if (typeof msg === "string") return msg;
 	return `Request failed (${status})`;
-}
-
-async function apiPost<T>(route: string, body: unknown): Promise<T> {
-	const res = await apiFetch(`${PLUGIN_API}/${route}`, {
-		method: "POST",
-		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify(body),
-	});
-	if (!res.ok) {
-		const err = await res.json().catch(() => ({})) as Record<string, unknown>;
-		throw new Error(extractErrorMessage(err, res.status));
-	}
-	return res.json() as Promise<T>;
 }
 
 async function apiGet<T>(route: string): Promise<T> {
@@ -89,6 +77,7 @@ export function GalleryUploaderField({
 	const [uploading, setUploading] = useState(false);
 	const [uploadProgress, setUploadProgress] = useState(0);
 	const [error, setError] = useState<string | null>(null);
+	const [pickerOpen, setPickerOpen] = useState(false);
 	const fileRef = useRef<HTMLInputElement>(null);
 
 	function update(next: GalleryImage[]) {
@@ -107,19 +96,14 @@ export function GalleryUploaderField({
 
 		for (const file of Array.from(files)) {
 			try {
-				// POST /_emdash/api/media with FormData — direct upload through Worker to R2
-				const formData = new FormData();
-				formData.append("file", file);
-				const res = await apiFetch("/_emdash/api/media", { method: "POST", body: formData });
-				if (!res.ok) {
-					const err = await res.json().catch(() => ({})) as Record<string, unknown>;
-					const d = (err?.data ?? err) as Record<string, unknown>;
-					throw new Error(extractErrorMessage(d, res.status));
-				}
-				const body = await res.json() as { data?: { item?: { storageKey?: string } } };
-				const storageKey = body?.data?.item?.storageKey;
-				if (!storageKey) throw new Error("Unexpected upload response — missing storageKey");
-				added.push({ mediaId: storageKey, caption: "", alt: "" });
+				const mediaItem = await uploadMedia(file);
+				const storageKey = mediaItem.storageKey;
+				if (!storageKey) throw new Error("Upload response missing storageKey");
+				added.push({
+					mediaId: storageKey,
+					caption: mediaItem.caption ?? "",
+					alt: mediaItem.alt ?? "",
+				});
 			} catch (e: unknown) {
 				console.error("[gallery-uploader] upload error:", e);
 				const msg = e instanceof Error ? e.message : typeof e === "string" ? e : JSON.stringify(e);
@@ -132,6 +116,16 @@ export function GalleryUploaderField({
 		if (fileRef.current) fileRef.current.value = "";
 		if (added.length > 0) update([...images, ...added]);
 		setUploading(false);
+	}
+
+	function handlePickerSelect(item: MediaItem) {
+		if (!item.storageKey) return;
+		update([...images, {
+			mediaId: item.storageKey,
+			caption: item.caption ?? "",
+			alt: item.alt ?? "",
+		}]);
+		setPickerOpen(false);
 	}
 
 	function remove(i: number) {
@@ -160,7 +154,7 @@ export function GalleryUploaderField({
 
 	return (
 		<div style={fw.wrap}>
-			{/* Upload bar */}
+			{/* Upload / picker toolbar */}
 			<div style={fw.toolbar}>
 				<button
 					type="button"
@@ -168,7 +162,15 @@ export function GalleryUploaderField({
 					onClick={() => fileRef.current?.click()}
 					style={uploading ? { ...fw.addBtn, opacity: 0.6 } : fw.addBtn}
 				>
-					{uploading ? `Uploading… ${uploadProgress}%` : "+ Add photos"}
+					{uploading ? `Uploading… ${uploadProgress}%` : "+ Upload photos"}
+				</button>
+				<button
+					type="button"
+					disabled={uploading}
+					onClick={() => setPickerOpen(true)}
+					style={uploading ? { ...fw.libraryBtn, opacity: 0.6 } : fw.libraryBtn}
+				>
+					Choose from library
 				</button>
 				<input
 					ref={fileRef}
@@ -191,7 +193,7 @@ export function GalleryUploaderField({
 			)}
 
 			{images.length === 0 && !uploading && (
-				<div style={fw.empty}>No photos added yet. Click "+ Add photos" to upload.</div>
+				<div style={fw.empty}>No photos added yet. Upload new photos or choose from the media library.</div>
 			)}
 
 			{images.length > 0 && (
@@ -238,6 +240,15 @@ export function GalleryUploaderField({
 					))}
 				</div>
 			)}
+
+			<MediaPickerModal
+				open={pickerOpen}
+				onOpenChange={setPickerOpen}
+				onSelect={handlePickerSelect}
+				localOnly
+				mimeTypeFilters={["image/"]}
+				title="Choose from Library"
+			/>
 		</div>
 	);
 }
@@ -321,8 +332,9 @@ export const fields = {
 
 const fw: Record<string, React.CSSProperties> = {
 	wrap: { fontFamily: "Inter, system-ui, sans-serif" },
-	toolbar: { display: "flex", alignItems: "center", gap: 10, marginBottom: 12 },
+	toolbar: { display: "flex", alignItems: "center", gap: 10, marginBottom: 12, flexWrap: "wrap" },
 	addBtn: { background: "#c8232c", color: "#fff", border: "none", padding: "8px 16px", fontSize: 12, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", cursor: "pointer" },
+	libraryBtn: { background: "transparent", color: "#0d0c0a", border: "1.5px solid #d6d1be", padding: "8px 16px", fontSize: 12, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", cursor: "pointer" },
 	count: { fontSize: 12, color: "#6e6a5e" },
 	error: { display: "flex", justifyContent: "space-between", alignItems: "center", background: "#fff0f0", border: "1px solid #fca5a5", color: "#c8232c", padding: "8px 12px", fontSize: 12, marginBottom: 12 },
 	dismissBtn: { background: "none", border: "none", cursor: "pointer", fontSize: 16, color: "#c8232c", padding: "0 2px" },
