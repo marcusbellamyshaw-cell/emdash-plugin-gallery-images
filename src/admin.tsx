@@ -24,7 +24,11 @@ async function apiGet<T>(route: string): Promise<T> {
 		const err = await res.json().catch(() => ({})) as Record<string, unknown>;
 		throw new Error(extractErrorMessage(err, res.status));
 	}
-	return res.json() as Promise<T>;
+	// Emdash wraps every plugin-route handler result in a { data } envelope, so
+	// unwrap it here (mirrors the media-upload response handling below). Without
+	// this, callers receive { data: {...} } and every field read is undefined.
+	const body = await res.json() as { data?: T };
+	return (body?.data ?? body) as T;
 }
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -134,7 +138,7 @@ function MediaLibraryPicker({
 								Add {selected.size} {selected.size === 1 ? "photo" : "photos"}
 							</button>
 						)}
-						<button type="button" style={pk.closeBtn} onClick={onClose}>×</button>
+						<button type="button" style={pk.closeBtn} onClick={onClose} aria-label="Close">×</button>
 					</div>
 				</div>
 				<div style={pk.body}>
@@ -208,9 +212,25 @@ export function GalleryUploaderField({
 	const [error, setError] = useState<string | null>(null);
 	const [pickerOpen, setPickerOpen] = useState(false);
 	const fileRef = useRef<HTMLInputElement>(null);
+	// Tracks the last value this widget emitted, so the re-sync effect can tell
+	// an external value change (entry switch, form reset, draft rehydrate) apart
+	// from the host simply echoing back our own onChange.
+	const lastEmitted = useRef<string>(JSON.stringify(parseImages(value)));
+
+	// Re-sync internal state when the controlled `value` prop changes externally.
+	// Without this the widget keeps showing the first-mounted images and can
+	// clobber the entry's real data via onChange after the host swaps entries.
+	useEffect(() => {
+		const incoming = JSON.stringify(parseImages(value));
+		if (incoming !== lastEmitted.current) {
+			setImages(parseImages(value));
+			lastEmitted.current = incoming;
+		}
+	}, [value]);
 
 	function update(next: GalleryImage[]) {
 		setImages(next);
+		lastEmitted.current = JSON.stringify(next);
 		onChange(next);
 	}
 
@@ -220,6 +240,7 @@ export function GalleryUploaderField({
 		setUploading(true);
 		setUploadProgress(0);
 		const added: GalleryImage[] = [];
+		const failures: string[] = [];
 		const total = files.length;
 		let done = 0;
 
@@ -240,7 +261,9 @@ export function GalleryUploaderField({
 			} catch (e: unknown) {
 				console.error("[gallery-uploader] upload error:", e);
 				const msg = e instanceof Error ? e.message : typeof e === "string" ? e : JSON.stringify(e);
-				setError(`"${file.name}": ${msg || "upload failed"}`);
+				// Accumulate every failure instead of overwriting, so a batch with
+				// several failed files reports all of them, not just the last one.
+				failures.push(`"${file.name}": ${msg || "upload failed"}`);
 			}
 			done++;
 			setUploadProgress(Math.round((done / total) * 100));
@@ -248,6 +271,10 @@ export function GalleryUploaderField({
 
 		if (fileRef.current) fileRef.current.value = "";
 		if (added.length > 0) update([...images, ...added]);
+		if (failures.length > 0) {
+			const ok = added.length > 0 ? `${added.length} uploaded; ` : "";
+			setError(`${ok}${failures.length} of ${total} failed — ${failures.join("; ")}`);
+		}
 		setUploading(false);
 	}
 
@@ -311,7 +338,7 @@ export function GalleryUploaderField({
 			{error && (
 				<div style={fw.error}>
 					{error}
-					<button type="button" style={fw.dismissBtn} onClick={() => setError(null)}>×</button>
+					<button type="button" style={fw.dismissBtn} onClick={() => setError(null)} aria-label="Dismiss error">×</button>
 				</div>
 			)}
 
@@ -336,6 +363,7 @@ export function GalleryUploaderField({
 									style={fw.removeBtn}
 									onClick={() => remove(i)}
 									title="Remove photo"
+									aria-label={`Remove photo ${i + 1}`}
 								>×</button>
 							</div>
 							<input
@@ -355,9 +383,9 @@ export function GalleryUploaderField({
 								aria-label={`Alt text for photo ${i + 1}`}
 							/>
 							<div style={fw.reorderRow}>
-								<button type="button" style={fw.reorderBtn} onClick={() => move(i, -1)} disabled={i === 0}>↑</button>
+								<button type="button" style={fw.reorderBtn} onClick={() => move(i, -1)} disabled={i === 0} aria-label={`Move photo ${i + 1} up`}>↑</button>
 								<span style={fw.reorderLabel}>{i + 1}/{images.length}</span>
-								<button type="button" style={fw.reorderBtn} onClick={() => move(i, 1)} disabled={i === images.length - 1}>↓</button>
+								<button type="button" style={fw.reorderBtn} onClick={() => move(i, 1)} disabled={i === images.length - 1} aria-label={`Move photo ${i + 1} down`}>↓</button>
 							</div>
 						</div>
 					))}

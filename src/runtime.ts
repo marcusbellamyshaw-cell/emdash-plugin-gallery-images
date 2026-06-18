@@ -32,8 +32,8 @@ function json(body: unknown, status = 200): Response {
 export function createPlugin() {
 	return definePlugin({
 		id: "ebt-gallery-images",
-		version: "1.3.0",
-		capabilities: ["content:read", "content:write"],
+		version: "1.4.0",
+		capabilities: ["content:read"],
 
 		admin: {
 			fieldWidgets: [
@@ -50,18 +50,22 @@ export function createPlugin() {
 				handler: async (ctx: any) => {
 					const content = ctx.content;
 					if (!content) return json({ error: "content:read not available" }, 503);
+					// ctx.content.list() returns a PaginatedResult shaped as { items },
+					// and core's mapOrderField only accepts camelCase order keys
+					// (publishedAt, not published_at — the latter throws and was being
+					// silently swallowed by the .catch, so posts never appeared).
 					const [postsResult, pagesResult] = await Promise.all([
-						content.list("posts", { orderBy: { published_at: "desc" }, limit: 200 }).catch(() => ({ entries: [] })),
-						content.list("pages", { orderBy: { title: "asc" }, limit: 100 }).catch(() => ({ entries: [] })),
+						content.list("posts", { orderBy: { publishedAt: "desc" }, limit: 200 }).catch(() => ({ items: [] })),
+						content.list("pages", { orderBy: { title: "asc" }, limit: 100 }).catch(() => ({ items: [] })),
 					]);
 					return {
 						entries: [
-							...(postsResult.entries ?? []).map((e: any) => ({
+							...(postsResult.items ?? []).map((e: any) => ({
 								collection: "posts", slug: e.id,
 								title: String(e.data?.title ?? "Untitled"),
 								imageCount: parseImages(e.data?.images).length,
 							})),
-							...(pagesResult.entries ?? []).map((e: any) => ({
+							...(pagesResult.items ?? []).map((e: any) => ({
 								collection: "pages", slug: e.id,
 								title: String(e.data?.title ?? "Untitled"),
 								imageCount: parseImages(e.data?.images).length,
