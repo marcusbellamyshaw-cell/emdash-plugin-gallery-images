@@ -11,17 +11,6 @@ function parseImages(raw: unknown): GalleryImage[] {
 	return [];
 }
 
-function sanitizeImages(images: unknown[]): GalleryImage[] {
-	return images
-		.filter((img): img is Record<string, unknown> => !!img && typeof img === "object")
-		.map((img) => ({
-			mediaId: String(img.mediaId ?? ""),
-			caption: String(img.caption ?? ""),
-			alt: String(img.alt ?? ""),
-		}))
-		.filter((img) => img.mediaId.length > 0);
-}
-
 function json(body: unknown, status = 200): Response {
 	return new Response(JSON.stringify(body), {
 		status,
