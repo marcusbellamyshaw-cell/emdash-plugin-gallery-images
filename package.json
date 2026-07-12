@@ -11,5 +11,15 @@
 		"emdash": ">=0.16.0",
 		"@emdash-cms/admin": "*",
 		"react": "^18.0.0 || ^19.0.0"
+	},
+	"scripts": {
+		"typecheck": "tsc --noEmit"
+	},
+	"devDependencies": {
+		"@emdash-cms/admin": "latest",
+		"@types/react": "^19.0.0",
+		"emdash": "latest",
+		"react": "^19.0.0",
+		"typescript": "^5.0.0"
 	}
 }
